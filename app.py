@@ -202,12 +202,15 @@ COUNTER_URL = "https://abacus.jasoncameron.dev/{action}/brin1688-video-mp3-downl
 
 def counter_request(action: str) -> int | None:
     """Anonymous install counter: 'hit' adds one, 'get' reads the total. No personal data is sent."""
-    import urllib.request
-    req = urllib.request.Request(COUNTER_URL.format(action=action),
-                                 headers={"User-Agent": f"VideoDownloader/{APP_VERSION}"})
     try:
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            return int(json.loads(resp.read().decode()).get("value"))
+        # curl_cffi ships its own CA certificates (Windows' store can be outdated)
+        from curl_cffi import requests
+        resp = requests.get(COUNTER_URL.format(action=action), timeout=8,
+                            headers={"User-Agent": f"VideoDownloader/{APP_VERSION}"})
+        if resp.status_code == 404:
+            return 0                              # nobody counted yet
+        resp.raise_for_status()
+        return int(resp.json().get("value"))
     except Exception:
         return None
 
@@ -551,16 +554,19 @@ class YouTubeMP3Downloader(ctk.CTk):
                 count = counter_request("get")
         except Exception:
             count = None
-        self.user_count = count or 0     # read by _poll_user_count on the UI thread
+        self.user_count = count          # None = offline; read on the UI thread
+        self.user_count_done = True
 
     def _poll_user_count(self, tries: int = 40):
         """UI thread: shows the user count once the background request has finished."""
-        count = getattr(self, "user_count", None)
-        if count:
-            self.users_label.configure(text=f"● {count:,} users")
+        if not getattr(self, "user_count_done", False):
+            if tries > 0:
+                self.after(500, lambda: self._poll_user_count(tries - 1))
+            return
+        count = self.user_count
+        if count is not None:
+            self.users_label.configure(text=f"● {count:,} user" + ("" if count == 1 else "s"))
             self.users_label.pack(side="right", padx=(0, 8), ipadx=4)
-        elif count is None and tries > 0:
-            self.after(500, lambda: self._poll_user_count(tries - 1))
 
     def _set_box_focus(self, focused: bool):
         """Glowing accent border while the link box is focused."""
