@@ -128,6 +128,31 @@ def blend(c1: str, c2: str, t: float) -> str:
     return "#" + "".join(f"{round(x + (y - x) * t):02X}" for x, y in zip(a, b))
 
 
+def fade(widget, target, start=None, steps: int = 10, prop: str = "fg_color", ms: int = 16):
+    """Smoothly fades a color property (fg_color, text_color, ...) toward target."""
+    job = getattr(widget, "_fade_jobs", {}).get(prop)
+    if job:
+        widget.after_cancel(job)
+    begin = mode_color(start if start is not None else widget.cget(prop))
+    end = mode_color(target)
+    if not (begin.startswith("#") and end.startswith("#") and len(begin) == len(end) == 7):
+        widget.configure(**{prop: target})
+        return
+    widget._fade_jobs = getattr(widget, "_fade_jobs", {})
+
+    def step(i=1):
+        try:
+            if i >= steps:
+                widget.configure(**{prop: target})    # keep the light/dark pair
+                widget._fade_jobs.pop(prop, None)
+                return
+            widget.configure(**{prop: blend(begin, end, i / steps)})
+            widget._fade_jobs[prop] = widget.after(ms, lambda: step(i + 1))
+        except tk.TclError:
+            pass                                       # widget was destroyed
+    step()
+
+
 class Hover:
     """Smooth color fade on hover and a darker flash on press for a CTkButton."""
     instances = []
@@ -141,6 +166,7 @@ class Hover:
         widget.bind("<Leave>", lambda e: widget.after(20, self._on_leave), add="+")
         widget.bind("<ButtonPress-1>", lambda e: self._on_press(), add="+")
         widget.bind("<ButtonRelease-1>", lambda e: self._on_enter(), add="+")
+        widget._hover = self
         Hover.instances.append(self)
 
     def _pointer_inside(self) -> bool:
@@ -327,8 +353,9 @@ class YouTubeMP3Downloader(ctk.CTk):
         self.spinner_idx = 0
         self.spinner_job = None
 
-        # Build UI
+        # Build UI, then fade the window in
         self.setup_ui()
+        self._fade_in_window()
 
     def center_window(self):
         """Calculates screen dimensions and centers the 480x320 window."""
@@ -397,7 +424,7 @@ class YouTubeMP3Downloader(ctk.CTk):
         self.paste_btn = self._pill(links_head, "Paste", self.paste_clipboard, height=24)
         self.paste_btn.pack(side="right", padx=(0, 6))
 
-        box_wrap = ctk.CTkFrame(links_card, fg_color="transparent")
+        box_wrap = self.box_wrap = ctk.CTkFrame(links_card, fg_color="transparent")
         box_wrap.pack(fill="x", padx=12)
         self.url_box = ctk.CTkTextbox(
             box_wrap, height=66, corner_radius=10, border_width=2,
@@ -647,21 +674,76 @@ class YouTubeMP3Downloader(ctk.CTk):
             content = ""
         if not content:
             self.update_status("Clipboard is empty", STATUS_WARN)
+            self.shake_links()
             return
         existing = self.url_box.get("1.0", tk.END).strip()
         self.url_box.delete("1.0", tk.END)
         self.url_box.insert("1.0", f"{existing}\n{content}" if existing else content)
         self.update_link_summary()
+        self.flash_button(self.paste_btn, "✓ Pasted")
         self.update_status(f"Link pasted · {len(self.get_urls())} link(s) in list", STATUS_SUCCESS)
 
     def clear_links(self):
         self.url_box.delete("1.0", tk.END)
         self.update_link_summary()
+        self.flash_button(self.clear_btn, "✓ Cleared")
         self.update_status("Links cleared")
 
     def update_status(self, text: str, color: str | None = None):
-        """Status text and color update (UI thread)."""
-        self.status_label.configure(text=text, text_color=color or MUTED)
+        """Status text update with a quick fade-in (UI thread)."""
+        target = color or MUTED
+        if text == self.status_label.cget("text"):
+            return
+        self.status_label.configure(text=text)
+        fade(self.status_label, target, start=blend(mode_color(target), mode_color(BG), 0.75),
+             steps=8, prop="text_color")
+
+    # -------------------------------------------------------------------------
+    # Effects
+    # -------------------------------------------------------------------------
+    def _fade_in_window(self, step: int = 0):
+        """Fades the whole window in on start-up."""
+        try:
+            self.attributes("-alpha", min(1.0, step / 14))
+        except tk.TclError:
+            return
+        if step < 14:
+            self.after(16, lambda: self._fade_in_window(step + 1))
+
+    def shake_links(self):
+        """Shakes the link box and flashes its border red (invalid / empty input)."""
+        self.url_box.configure(border_color=STATUS_ERROR)
+        offsets = [10, -9, 7, -6, 4, -3, 1, 0]
+
+        def step(i=0):
+            if i < len(offsets):
+                o = offsets[i]
+                self.box_wrap.pack_configure(padx=(12 + o, 12 - o))
+                self.after(28, lambda: step(i + 1))
+            else:
+                focused = self.focus_get() is getattr(self.url_box, "_textbox", None)
+                fade(self.url_box, ACCENT_COLOR if focused else INPUT_BORDER,
+                     steps=14, prop="border_color")
+        step()
+
+    def flash_button(self, btn, text: str, color: str = ACCENT_COLOR, ms: int = 900):
+        """Briefly shows a confirmation on a button, then fades it back."""
+        original = getattr(btn, "_flash_text", None) or btn.cget("text")
+        btn._flash_text = original
+        hover = getattr(btn, "_hover", None)
+        if hover:
+            hover.enabled = False
+        btn.configure(text=text, fg_color=color, text_color="#FFFFFF")
+
+        def restore():
+            btn.configure(text=original, text_color=TEXT)
+            btn._flash_text = None
+            if hover:
+                hover.enabled = True
+                fade(btn, hover.normal, steps=12)
+        if getattr(btn, "_flash_job", None):
+            btn.after_cancel(btn._flash_job)
+        btn._flash_job = btn.after(ms, restore)
 
     def set_progress(self, val: float):
         """Sets the progress target; the bar eases smoothly toward it."""
@@ -699,6 +781,8 @@ class YouTubeMP3Downloader(ctk.CTk):
         self.download_dir = Path(folder)
         self.refresh_folder_label()
         save_settings({"download_dir": str(self.download_dir)})
+        self.flash_button(self.change_folder_btn, "✓ Saved")
+        fade(self.folder_path_label, TEXT, start=ACCENT_COLOR, steps=30, prop="text_color", ms=30)
         self.update_status(f"Files will be saved to: {self.download_dir.name or folder}", STATUS_SUCCESS)
 
     def open_downloads_folder(self):
@@ -724,6 +808,9 @@ class YouTubeMP3Downloader(ctk.CTk):
             text=f"{frame}  {base_text}…",
             fg_color=blend(mode_color(ACCENT_COLOR), mode_color(ACCENT_GLOW), pulse),
         )
+        # Shimmer on the progress bar, a little out of phase with the button
+        shimmer = (math.sin(self.spinner_idx * 0.18 + 1.6) + 1) / 2
+        self.progress_bar.configure(progress_color=blend(ACCENT_COLOR, ACCENT_GLOW, shimmer))
         self.spinner_idx += 1
         if self.spinner_idx % 3 == 0:
             self._refresh_progress()
@@ -734,6 +821,9 @@ class YouTubeMP3Downloader(ctk.CTk):
         if self.spinner_job:
             self.after_cancel(self.spinner_job)
             self.spinner_job = None
+        self.progress_bar.configure(progress_color=ACCENT_COLOR if success else STATUS_WARN)
+        fade(self.percent_label, MUTED, start=ACCENT_GLOW if success else STATUS_WARN,
+             steps=40, prop="text_color", ms=30)
         if success:
             self.download_btn.configure(text="✓  Done!", fg_color=ACCENT_GLOW)
         else:
@@ -755,10 +845,11 @@ class YouTubeMP3Downloader(ctk.CTk):
             row["frame"].destroy()
         self.queue_rows = []
         self.queue_empty.pack_forget()
-        for job in self.jobs:
+        for i, job in enumerate(self.jobs):
             name = detect_platform(job["url"])
             frame = ctk.CTkFrame(self.queue_frame, fg_color=CHIP, corner_radius=10)
-            frame.pack(fill="x", pady=(0, 4), padx=2)
+            # Staggered entrance: rows appear one after another and fade from the card color
+            self.after(70 * i, lambda f=frame: self._show_row(f))
             frame.grid_columnconfigure(1, weight=1)
             ctk.CTkLabel(
                 frame, text="●", width=18, text_color=PLATFORM_COLORS.get(name, MUTED),
@@ -778,13 +869,25 @@ class YouTubeMP3Downloader(ctk.CTk):
             bar.set(0)
             bar.grid(row=2, column=1, columnspan=2, sticky="ew", padx=(0, 10), pady=(3, 7))
             self.queue_rows.append({"frame": frame, "title": title, "state": state,
-                                    "detail": detail, "bar": bar, "name": name})
+                                    "detail": detail, "bar": bar, "name": name, "flashed": False})
+
+    def _show_row(self, frame):
+        try:
+            frame.pack(fill="x", pady=(0, 4), padx=2)
+            fade(frame, CHIP, start=CARD, steps=12)
+        except tk.TclError:
+            pass                                   # row was replaced before it appeared
 
     def refresh_queue(self):
         for job, row in zip(self.jobs, self.queue_rows):
             if job["title"]:
                 row["title"].configure(text=shorten(job["title"], 40))
             phase = job["phase"]
+            if phase in ("done", "failed") and not row["flashed"]:
+                # Finished: flash the row green / red, then fade back
+                row["flashed"] = True
+                tint = STATUS_SUCCESS if phase == "done" else STATUS_ERROR
+                fade(row["frame"], CHIP, start=blend(mode_color(CHIP), tint, 0.35), steps=30, ms=25)
             if phase == "done":
                 row["state"].configure(text="✓ Saved", text_color=STATUS_SUCCESS)
                 row["detail"].configure(text=f"{row['name']} · saved as {self.mode_at_start}")
@@ -836,12 +939,14 @@ class YouTubeMP3Downloader(ctk.CTk):
         urls = self.get_urls()
         if not urls:
             self.update_status("Please enter at least one video link", STATUS_WARN)
+            self.shake_links()
             self.url_box.focus()
             return
 
         invalid = [u for u in urls if not self.validate_url(u)]
         if invalid:
             self.update_status(f"Unsupported link: {invalid[0][:40]}", STATUS_ERROR)
+            self.shake_links()
             return
 
         # One state record per link; worker threads write, the UI thread reads
