@@ -1,4 +1,4 @@
-# Video & MP3 Downloader
+# Borin Downloader
 
 A small Windows desktop app that downloads videos as **MP3** (audio) or **MP4** (video) from
 **YouTube, Facebook, TikTok, Douyin and Bilibili**.
@@ -10,9 +10,9 @@ A small Windows desktop app that downloads videos as **MP3** (audio) or **MP4** 
 
 ## Install (for users)
 
-1. Open the **[Releases](../../releases/latest)** page and download `VideoDownloader-Setup-1.3.0.exe`
+1. Open the **[Releases](../../releases/latest)** page and download `BorinDownloader-Setup-1.3.0.exe`
 2. Run it and follow the steps. No admin rights needed.
-3. Open **Video & MP3 Downloader** from the Start menu or desktop.
+3. Open **Borin Downloader** from the Start menu or desktop.
 
 FFmpeg and everything else is included. Douyin uses Microsoft Edge, which comes with Windows 10/11.
 
@@ -21,9 +21,9 @@ FFmpeg and everything else is included. Douyin uses Microsoft Edge, which comes 
 
 ## ដំឡើង (Khmer)
 
-1. ចូល **Releases** ហើយទាញយក `VideoDownloader-Setup-1.3.0.exe`
+1. ចូល **Releases** ហើយទាញយក `BorinDownloader-Setup-1.3.0.exe`
 2. ចុចពីរដង ហើយចុច Next រហូតដល់ចប់
-3. បើក **Video & MP3 Downloader** ពី Start menu ឬ Desktop
+3. បើក **Borin Downloader** ពី Start menu ឬ Desktop
 
 បើ Windows លោតថា "Windows protected your PC" ចុច **More info → Run anyway**។
 
@@ -46,7 +46,7 @@ pyinstaller --noconfirm installer.spec
 "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" installer.iss
 ```
 
-The installer is written to `installer\VideoDownloader-Setup-<version>.exe`.
+The installer is written to `installer\BorinDownloader-Setup-<version>.exe`.
 
 ## Privacy
 

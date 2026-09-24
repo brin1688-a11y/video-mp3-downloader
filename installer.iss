@@ -1,21 +1,21 @@
-; Inno Setup script -> installer\VideoDownloader-Setup-<version>.exe
+; Inno Setup script -> installer\BorinDownloader-Setup-<version>.exe
 ; Build with build_installer.bat (runs PyInstaller first, then this script)
 
-#define AppName "Video & MP3 Downloader"
+#define AppName "Borin Downloader"
 #define AppVersion "1.3.0"
-#define AppExe "VideoDownloader.exe"
+#define AppExe "BorinDownloader.exe"
 
 [Setup]
 AppId={{6F3C2A51-8B7E-4D2A-9C1F-5E8A7B2D4C90}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher=Sborinn
-DefaultDirName={autopf}\VideoDownloader
+DefaultDirName={autopf}\BorinDownloader
 DefaultGroupName={#AppName}
 UninstallDisplayIcon={app}\{#AppExe}
 SetupIconFile=icon.ico
 OutputDir=installer
-OutputBaseFilename=VideoDownloader-Setup-{#AppVersion}
+OutputBaseFilename=BorinDownloader-Setup-{#AppVersion}
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
@@ -30,7 +30,7 @@ CloseApplications=yes
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-Source: "dist\VideoDownloader\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\BorinDownloader\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"

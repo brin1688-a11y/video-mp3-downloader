@@ -1,5 +1,5 @@
 """
-Video & MP3 Downloader - Desktop Application
+Borin Downloader - Desktop Application
 Supports YouTube, Facebook, TikTok, Douyin & Bilibili (MP3 audio or MP4 video)
 Built with CustomTkinter & yt-dlp
 Modern Minimalist Dark / Light Flat Design
@@ -28,7 +28,7 @@ import douyin
 # -----------------------------------------------------------------------------
 # Configuration & Theme Constants
 # -----------------------------------------------------------------------------
-APP_TITLE = "Video & MP3 Downloader"
+APP_TITLE = "Borin Downloader"
 APP_VERSION = "1.3.0"
 WINDOW_WIDTH = 440
 WINDOW_HEIGHT = 590
@@ -206,7 +206,7 @@ def counter_request(action: str) -> int | None:
         # curl_cffi ships its own CA certificates (Windows' store can be outdated)
         from curl_cffi import requests
         resp = requests.get(COUNTER_URL.format(action=action), timeout=8,
-                            headers={"User-Agent": f"VideoDownloader/{APP_VERSION}"})
+                            headers={"User-Agent": f"BorinDownloader/{APP_VERSION}"})
         if resp.status_code == 404:
             return 0                              # nobody counted yet
         resp.raise_for_status()
@@ -341,7 +341,7 @@ class YouTubeMP3Downloader(ctk.CTk):
         title_box = ctk.CTkFrame(header, fg_color="transparent")
         title_box.pack(side="left")
         self.title_label = ctk.CTkLabel(
-            title_box, text="Video Downloader", text_color=TEXT,
+            title_box, text="Borin Downloader", text_color=TEXT,
             font=ctk.CTkFont(size=15, weight="bold"), height=20, anchor="w"
         )
         self.title_label.pack(anchor="w")

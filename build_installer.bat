@@ -1,7 +1,7 @@
 @echo off
-title Video Downloader - Installer Builder
+title Borin Downloader - Installer Builder
 echo =================================================================
-echo   Video ^& MP3 Downloader - setup.exe Builder
+echo   Borin Downloader - setup.exe Builder
 echo =================================================================
 echo.
 
@@ -24,9 +24,9 @@ pip install -q -U "yt-dlp[default,curl-cffi]"
 :: 3. Build the app folder with PyInstaller
 echo.
 echo [2/3] Building app with PyInstaller...
-if exist "dist\VideoDownloader" rmdir /s /q "dist\VideoDownloader"
+if exist "dist\BorinDownloader" rmdir /s /q "dist\BorinDownloader"
 pyinstaller --noconfirm installer.spec
-if not exist "dist\VideoDownloader\VideoDownloader.exe" (
+if not exist "dist\BorinDownloader\BorinDownloader.exe" (
     echo [ERROR] PyInstaller build failed. Check the logs above.
     pause
     exit /b 1
