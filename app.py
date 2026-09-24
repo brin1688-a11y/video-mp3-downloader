@@ -29,7 +29,7 @@ import douyin
 # Configuration & Theme Constants
 # -----------------------------------------------------------------------------
 APP_TITLE = "Video & MP3 Downloader"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 WINDOW_WIDTH = 440
 WINDOW_HEIGHT = 590
 MAX_PARALLEL = 3                 # Links downloaded at the same time
@@ -197,6 +197,21 @@ def load_logo(size: int):
         return None
 
 
+COUNTER_URL = "https://abacus.jasoncameron.dev/{action}/brin1688-video-mp3-downloader/installs"
+
+
+def counter_request(action: str) -> int | None:
+    """Anonymous install counter: 'hit' adds one, 'get' reads the total. No personal data is sent."""
+    import urllib.request
+    req = urllib.request.Request(COUNTER_URL.format(action=action),
+                                 headers={"User-Agent": f"VideoDownloader/{APP_VERSION}"})
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            return int(json.loads(resp.read().decode()).get("value"))
+    except Exception:
+        return None
+
+
 def get_default_download_path() -> Path:
     """Returns the user's default Downloads folder."""
     if os.name == "nt":
@@ -340,6 +355,14 @@ class YouTubeMP3Downloader(ctk.CTk):
         )
         self.theme_btn.pack(side="right")
         Hover(self.theme_btn, CARD, CHIP_HOVER, CHIP_PRESS)
+
+        # Small user-count chip (filled in from the web; hidden while offline)
+        self.users_label = ctk.CTkLabel(
+            header, text="", height=22, corner_radius=11, fg_color=CHIP,
+            text_color=MUTED, font=ctk.CTkFont(size=10, weight="bold")
+        )
+        threading.Thread(target=self._load_user_count, daemon=True).start()
+        self.after(300, self._poll_user_count)
 
         # ---------------------------------------------------------------------
         # LINKS CARD: multi-line link box, detected platforms, Paste / Clear
@@ -515,6 +538,29 @@ class YouTubeMP3Downloader(ctk.CTk):
             ctk.set_appearance_mode("Dark")
             self.theme_btn.configure(text="☀")
         Hover.reset_all()
+
+    def _load_user_count(self):
+        """Background: counts this install once (installed app only), then reads the total."""
+        count = None
+        try:
+            if getattr(sys, "frozen", False) and not load_settings().get("counted"):
+                count = counter_request("hit")
+                if count is not None:
+                    save_settings({"counted": True})
+            if count is None:
+                count = counter_request("get")
+        except Exception:
+            count = None
+        self.user_count = count or 0     # read by _poll_user_count on the UI thread
+
+    def _poll_user_count(self, tries: int = 40):
+        """UI thread: shows the user count once the background request has finished."""
+        count = getattr(self, "user_count", None)
+        if count:
+            self.users_label.configure(text=f"● {count:,} users")
+            self.users_label.pack(side="right", padx=(0, 8), ipadx=4)
+        elif count is None and tries > 0:
+            self.after(500, lambda: self._poll_user_count(tries - 1))
 
     def _set_box_focus(self, focused: bool):
         """Glowing accent border while the link box is focused."""

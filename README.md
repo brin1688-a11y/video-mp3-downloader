@@ -10,7 +10,7 @@ A small Windows desktop app that downloads videos as **MP3** (audio) or **MP4** 
 
 ## Install (for users)
 
-1. Open the **[Releases](../../releases/latest)** page and download `VideoDownloader-Setup-1.2.0.exe`
+1. Open the **[Releases](../../releases/latest)** page and download `VideoDownloader-Setup-1.3.0.exe`
 2. Run it and follow the steps. No admin rights needed.
 3. Open **Video & MP3 Downloader** from the Start menu or desktop.
 
@@ -21,7 +21,7 @@ FFmpeg and everything else is included. Douyin uses Microsoft Edge, which comes 
 
 ## ដំឡើង (Khmer)
 
-1. ចូល **Releases** ហើយទាញយក `VideoDownloader-Setup-1.2.0.exe`
+1. ចូល **Releases** ហើយទាញយក `VideoDownloader-Setup-1.3.0.exe`
 2. ចុចពីរដង ហើយចុច Next រហូតដល់ចប់
 3. បើក **Video & MP3 Downloader** ពី Start menu ឬ Desktop
 
@@ -47,3 +47,10 @@ pyinstaller --noconfirm installer.spec
 ```
 
 The installer is written to `installer\VideoDownloader-Setup-<version>.exe`.
+
+## Privacy
+
+To show the small "users" count, the installed app sends **one anonymous request** the first time it
+runs on a PC (adds +1), and reads the total on later launches, using the free
+[Abacus](https://abacus.jasoncameron.dev) counter. No name, IP log, links or other personal data are sent
+by the app. If there is no internet, the count is simply hidden.

@@ -2,7 +2,7 @@
 ; Build with build_installer.bat (runs PyInstaller first, then this script)
 
 #define AppName "Video & MP3 Downloader"
-#define AppVersion "1.2.0"
+#define AppVersion "1.3.0"
 #define AppExe "VideoDownloader.exe"
 
 [Setup]
