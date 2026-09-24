@@ -5,7 +5,6 @@ coverage/
 .DS_Store
 *.log
 .env*
-!.env.example
 installer/
 telegram_bot/
 __pycache__/
