@@ -94,6 +94,26 @@ def shorten(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+def format_speed(bytes_per_sec) -> str:
+    """1536000 -> '1.5 MB/s' (plain text, no terminal color codes)."""
+    if not bytes_per_sec:
+        return ""
+    for unit in ("B/s", "KB/s", "MB/s", "GB/s"):
+        if bytes_per_sec < 1024 or unit == "GB/s":
+            return f"{bytes_per_sec:.0f} {unit}" if unit == "B/s" else f"{bytes_per_sec:.1f} {unit}"
+        bytes_per_sec /= 1024
+
+
+def format_eta(seconds) -> str:
+    """95 -> '1:35', 3725 -> '1:02:05'."""
+    if seconds is None:
+        return ""
+    seconds = int(seconds)
+    h, rem = divmod(seconds, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
 def mode_color(color) -> str:
     """Picks the light / dark variant of a color for the current appearance mode."""
     if isinstance(color, (tuple, list)):
@@ -887,8 +907,8 @@ class YouTubeMP3Downloader(ctk.CTk):
                 downloaded = d.get("downloaded_bytes", 0)
                 if total > 0:
                     job["fraction"] = min(downloaded / total, 0.95)
-                    speed = d.get("_speed_str", "").strip()
-                    eta = d.get("_eta_str", "").strip()
+                    speed = format_speed(d.get("speed"))
+                    eta = format_eta(d.get("eta"))
                     msg = f"Downloading: {int(downloaded / total * 100)}%"
                     if speed:
                         msg += f" · {speed}"
@@ -929,6 +949,7 @@ class YouTubeMP3Downloader(ctk.CTk):
             "quiet": True,
             "no_warnings": True,
             "noprogress": True,
+            "color": {"stdout": "no_color", "stderr": "no_color"},
         }
 
         if mode == "MP4":
