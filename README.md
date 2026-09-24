@@ -52,5 +52,6 @@ The installer is written to `installer\VideoDownloader-Setup-<version>.exe`.
 
 To show the small "users" count, the installed app sends **one anonymous request** the first time it
 runs on a PC (adds +1), and reads the total on later launches, using the free
-[Abacus](https://abacus.jasoncameron.dev) counter. No name, IP log, links or other personal data are sent
-by the app. If there is no internet, the count is simply hidden.
+[Abacus](https://abacus.jasoncameron.dev) counter. The app sends no name, links or other personal data
+(like any web request, the counter service can see your IP address). If there is no internet, the count
+is simply hidden.
