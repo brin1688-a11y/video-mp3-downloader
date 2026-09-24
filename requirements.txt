@@ -1,0 +1,5 @@
+customtkinter>=5.2.0
+pillow>=10.0
+yt-dlp[default,curl-cffi]>=2026.08.19
+playwright>=1.45
+pyinstaller>=6.4.0

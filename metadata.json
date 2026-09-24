@@ -1,0 +1,6 @@
+{
+  "name": "CustomTkinter YouTube MP3 Downloader Studio",
+  "description": "Lightweight, minimalist desktop YouTube MP3 downloader built with Python CustomTkinter and yt-dlp, featuring an interactive desktop simulator, complete source code, and PyInstaller bundling suite.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
