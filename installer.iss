@@ -2,7 +2,7 @@
 ; Build with build_installer.bat (runs PyInstaller first, then this script)
 
 #define AppName "Borin Downloader"
-#define AppVersion "1.3.0"
+#define AppVersion "1.4.0"
 #define AppExe "BorinDownloader.exe"
 
 [Setup]
@@ -38,4 +38,4 @@ Name: "{group}\{cm:UninstallProgram,{#AppName}}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall

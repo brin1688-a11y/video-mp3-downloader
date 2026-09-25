@@ -150,7 +150,14 @@ def download(url: str, mode: str, quality: str, out_dir: Path, ffmpeg: str | Non
     max_height = int(quality.rstrip("p")) if mode == "MP4" and quality != "Best" else None
     stream_url = pick_stream(detail, mode, max_height)
 
-    base = str(out_dir / f"{safe_filename(title)} [{aweme_id}]")
+    artist = (detail.get("author") or {}).get("nickname") or ""
+    if mode == "MP3":
+        # Clean title/artist for the MP3 tags and "Artist - Song.mp3" file name
+        from tags import clean_music_title, file_label
+        title, artist = clean_music_title(title, None, artist)
+        base = str(out_dir / safe_filename(file_label(title, artist), max_len=100))
+    else:
+        base = str(out_dir / f"{safe_filename(title)} [{aweme_id}]")
     video_path = Path(base + (".mp4" if mode == "MP4" else ".part.mp4"))
 
     # Download with progress
@@ -179,14 +186,43 @@ def download(url: str, mode: str, quality: str, out_dir: Path, ffmpeg: str | Non
     job["fraction"] = 0.95
     job["msg"] = "Converting audio to MP3..."
     bitrate = quality.replace(" kbps", "")
-    result = subprocess.run(
-        [ffmpeg, "-y", "-loglevel", "error", "-i", str(video_path), "-vn",
-         "-codec:a", "libmp3lame", "-b:a", f"{bitrate}k", "-metadata", f"title={title[:120]}",
-         base + ".mp3"],
-        capture_output=True, text=True,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-    )
+    cover_path = download_cover(detail, headers, base)
+
+    cmd = [ffmpeg, "-y", "-loglevel", "error", "-i", str(video_path)]
+    if cover_path:
+        # Embed the video cover as MP3 album art
+        cmd += ["-i", str(cover_path), "-map", "0:a", "-map", "1:v", "-c:v", "mjpeg",
+                "-disposition:v", "attached_pic", "-metadata:s:v", "title=Album cover",
+                "-metadata:s:v", "comment=Cover (front)"]
+    else:
+        cmd += ["-vn"]
+    cmd += ["-codec:a", "libmp3lame", "-b:a", f"{bitrate}k", "-id3v2_version", "3",
+            "-metadata", f"title={title[:120]}", "-metadata", f"artist={artist}",
+            base + ".mp3"]
+    result = subprocess.run(cmd, capture_output=True, encoding="utf-8", errors="replace",
+                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     video_path.unlink(missing_ok=True)
+    if cover_path:
+        cover_path.unlink(missing_ok=True)
     if result.returncode != 0:
         raise DouyinError(f"MP3 conversion failed: {result.stderr.strip()[:50]}")
     return title
+
+
+def download_cover(detail: dict, headers: dict, base: str) -> Path | None:
+    """Saves the video's cover image next to the output (for album art). None if unavailable."""
+    from curl_cffi import requests
+
+    video = detail.get("video") or {}
+    for key in ("origin_cover", "cover", "dynamic_cover"):
+        urls = (video.get(key) or {}).get("url_list") or []
+        for url in urls:
+            try:
+                resp = requests.get(url, headers=headers, impersonate="chrome", timeout=20)
+                if resp.status_code == 200 and len(resp.content) > 1000:
+                    path = Path(base + ".cover")
+                    path.write_bytes(resp.content)
+                    return path
+            except Exception:
+                continue
+    return None

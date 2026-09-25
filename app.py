@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 import subprocess
 from pathlib import Path
 import json
+import webbrowser
 import math
 import tkinter as tk
 from tkinter import filedialog
@@ -24,12 +25,29 @@ except ImportError:
     yt_dlp = None
 
 import douyin
+from tags import clean_music_title, file_label
+
+if yt_dlp is not None:
+    class CleanMusicTags(yt_dlp.postprocessor.PostProcessor):
+        """Before download: clean the song title/artist used for MP3 tags and the file name."""
+
+        def run(self, info):
+            track, artist = clean_music_title(
+                info.get("track") or info.get("title") or "",
+                info.get("artist") or info.get("creator"),
+                info.get("uploader") or info.get("channel"),
+            )
+            info["track"] = track                  # FFmpegMetadata writes this as the title tag
+            if artist:
+                info["artist"] = artist
+            info["clean_name"] = file_label(track, artist)
+            return [], info
 
 # -----------------------------------------------------------------------------
 # Configuration & Theme Constants
 # -----------------------------------------------------------------------------
 APP_TITLE = "Borin Downloader"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 WINDOW_WIDTH = 440
 WINDOW_HEIGHT = 590
 MAX_PARALLEL = 3                 # Links downloaded at the same time
@@ -92,6 +110,27 @@ def detect_platform(url: str) -> str:
 def shorten(text: str, limit: int) -> str:
     text = " ".join(text.split())
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+# Embed the video thumbnail as cover art (converted to JPG so every player shows it)
+THUMBNAIL_POSTPROCESSORS = [
+    {"key": "FFmpegThumbnailsConvertor", "format": "jpg", "when": "before_dl"},
+    {"key": "EmbedThumbnail", "already_have_thumbnail": False},
+]
+
+# YouTube clients that still work when the default one is blocked as a "bot"
+YOUTUBE_FALLBACK_CLIENTS = ["web_safari", "mweb"]
+
+
+def is_youtube_block(error_text: str) -> bool:
+    low = error_text.lower()
+    return "not a bot" in low or "429" in low or "too many requests" in low
+
+
+def is_permanent_error(error_text: str) -> bool:
+    """Errors a retry can't fix (private / deleted video, no FFmpeg...)."""
+    low = error_text.lower()
+    return any(w in low for w in ("private", "unavailable", "removed", "ffmpeg", "unsupported url"))
 
 
 def format_speed(bytes_per_sec) -> str:
@@ -244,6 +283,31 @@ def load_logo(size: int):
 
 
 COUNTER_URL = "https://abacus.jasoncameron.dev/{action}/brin1688-video-mp3-downloader/installs"
+
+
+RELEASES_API = "https://api.github.com/repos/brin1688-a11y/video-mp3-downloader/releases/latest"
+
+
+def version_tuple(version: str) -> tuple:
+    return tuple(int(n) for n in re.findall(r"\d+", version)[:3])
+
+
+def check_for_update() -> dict | None:
+    """Returns {version, url, page} if GitHub has a newer release than this app, else None."""
+    try:
+        from curl_cffi import requests
+        resp = requests.get(RELEASES_API, timeout=8, headers={
+            "Accept": "application/vnd.github+json", "User-Agent": f"BorinDownloader/{APP_VERSION}"})
+        resp.raise_for_status()
+        data = resp.json()
+        latest = data.get("tag_name") or ""
+        if not latest or version_tuple(latest) <= version_tuple(APP_VERSION):
+            return None
+        setup = next((a["browser_download_url"] for a in data.get("assets", [])
+                      if a.get("name", "").lower().endswith(".exe")), None)
+        return {"version": latest.lstrip("vV"), "url": setup, "page": data.get("html_url")}
+    except Exception:
+        return None
 
 
 def counter_request(action: str) -> int | None:
@@ -417,7 +481,33 @@ class YouTubeMP3Downloader(ctk.CTk):
         # ---------------------------------------------------------------------
         # LINKS CARD: multi-line link box, detected platforms, Paste / Clear
         # ---------------------------------------------------------------------
-        links_card = self._card()
+        # Update bar (hidden until a newer release is found on GitHub)
+        self.update_bar = ctk.CTkFrame(
+            self.container, fg_color=("#ECFDF5", "#0E2A21"), corner_radius=12,
+            border_width=1, border_color=ACCENT_COLOR
+        )
+        self.update_label = ctk.CTkLabel(
+            self.update_bar, text="", anchor="w", text_color=TEXT,
+            font=ctk.CTkFont(size=11, weight="bold")
+        )
+        self.update_label.pack(side="left", padx=(12, 6), pady=8, fill="x", expand=True)
+        self.update_close_btn = ctk.CTkButton(
+            self.update_bar, text="✕", width=26, height=26, corner_radius=13,
+            font=ctk.CTkFont(size=11), text_color=MUTED, command=self.update_bar.pack_forget
+        )
+        self.update_close_btn.pack(side="right", padx=(0, 8))
+        Hover(self.update_close_btn, ("#ECFDF5", "#0E2A21"), CHIP_HOVER, CHIP_PRESS)
+        self.update_btn = ctk.CTkButton(
+            self.update_bar, text="Update", width=70, height=26, corner_radius=13,
+            font=ctk.CTkFont(size=11, weight="bold"), text_color="#FFFFFF",
+            command=self.start_update
+        )
+        self.update_btn.pack(side="right", padx=(0, 4))
+        Hover(self.update_btn, ACCENT_COLOR, ACCENT_HOVER, ACCENT_PRESS)
+        self.after(1500, lambda: threading.Thread(target=self._check_update, daemon=True).start())
+        self.after(2000, self._poll_update)
+
+        links_card = self.links_card = self._card()
         links_head = self._card_title(links_card, "LINKS")
         self.clear_btn = self._pill(links_head, "Clear", self.clear_links, height=24)
         self.clear_btn.pack(side="right")
@@ -588,6 +678,76 @@ class YouTubeMP3Downloader(ctk.CTk):
             ctk.set_appearance_mode("Dark")
             self.theme_btn.configure(text="☀")
         Hover.reset_all()
+
+    # -------------------------------------------------------------------------
+    # In-app updates (from GitHub Releases)
+    # -------------------------------------------------------------------------
+    def _check_update(self):
+        """Background: looks for a newer release on GitHub."""
+        self.update_info = check_for_update()
+        self.update_checked = True
+
+    def _poll_update(self, tries: int = 60):
+        if not getattr(self, "update_checked", False):
+            if tries > 0:
+                self.after(500, lambda: self._poll_update(tries - 1))
+            return
+        info = self.update_info
+        if info:
+            self.update_label.configure(text=f"New version {info['version']} is available")
+            self.update_bar.pack(fill="x", pady=(0, 8), before=self.links_card)
+            fade(self.update_bar, ("#ECFDF5", "#0E2A21"), start=ACCENT_GLOW, steps=24, ms=25)
+
+    def start_update(self):
+        """Downloads the new installer, runs it silently and closes the app (it reopens after)."""
+        info = getattr(self, "update_info", None)
+        if not info:
+            return
+        if not getattr(sys, "frozen", False) or not info.get("url"):
+            webbrowser.open(info["page"])           # running from source: just open the page
+            return
+        if self.is_downloading:
+            self.update_status("Wait for the current downloads to finish, then update.", STATUS_WARN)
+            return
+        self.update_btn.configure(state="disabled", text="0%")
+        self.update_btn._hover.enabled = False
+        self.update_progress = 0.0
+        self.update_result = None
+        threading.Thread(target=self._download_update, args=(info["url"],), daemon=True).start()
+        self._poll_update_download()
+
+    def _download_update(self, url: str):
+        try:
+            from curl_cffi import requests
+            path = Path(os.environ.get("TEMP") or Path.home()) / url.rsplit("/", 1)[-1]
+            resp = requests.get(url, stream=True, timeout=60, allow_redirects=True)
+            resp.raise_for_status()
+            total = int(resp.headers.get("content-length") or 0)
+            done = 0
+            with open(path, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=256 * 1024):
+                    f.write(chunk)
+                    done += len(chunk)
+                    if total:
+                        self.update_progress = done / total
+            self.update_result = path
+        except Exception as e:
+            self.update_result = e
+
+    def _poll_update_download(self):
+        result = self.update_result
+        if result is None:
+            self.update_btn.configure(text=f"{int(self.update_progress * 100)}%")
+            self.after(200, self._poll_update_download)
+        elif isinstance(result, Path):
+            self.update_btn.configure(text="Installing…")
+            self.update_status("Installing update… the app will reopen.", STATUS_SUCCESS)
+            subprocess.Popen([str(result), "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART"])
+            self.after(800, self.destroy)
+        else:
+            self.update_btn.configure(state="normal", text="Retry")
+            self.update_btn._hover.enabled = True
+            self.update_status("Update download failed. Check your internet and retry.", STATUS_ERROR)
 
     def _load_user_count(self):
         """Background: counts this install once (installed app only), then reads the total."""
@@ -1005,7 +1165,8 @@ class YouTubeMP3Downloader(ctk.CTk):
         def hook(d: dict):
             status = d.get("status")
             if not job["title"]:
-                job["title"] = (d.get("info_dict") or {}).get("title")
+                info_dict = d.get("info_dict") or {}
+                job["title"] = info_dict.get("clean_name") or info_dict.get("title")
             if status == "downloading":
                 job["phase"] = "downloading"
                 total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
@@ -1043,7 +1204,11 @@ class YouTubeMP3Downloader(ctk.CTk):
         quality = self.quality_at_start
 
         # Prepare output template (title trimmed; id avoids name clashes on TikTok/FB)
-        output_template = str(self.download_dir / "%(title).80B [%(id)s].%(ext)s")
+        # MP3: "Artist - Song.mp3" (clean_name is set by CleanMusicTags); MP4: title + id
+        if mode == "MP3":
+            output_template = str(self.download_dir / "%(clean_name,title).100B.%(ext)s")
+        else:
+            output_template = str(self.download_dir / "%(title).80B [%(id)s].%(ext)s")
 
         ydl_opts = {
             "outtmpl": output_template,
@@ -1068,6 +1233,7 @@ class YouTubeMP3Downloader(ctk.CTk):
             ydl_opts["postprocessors"] = [
                 {"key": "FFmpegVideoRemuxer", "preferedformat": "mp4"},
                 {"key": "FFmpegMetadata", "add_metadata": True},
+                *THUMBNAIL_POSTPROCESSORS,
             ]
         else:
             ydl_opts["format"] = "bestaudio/best"
@@ -1077,8 +1243,11 @@ class YouTubeMP3Downloader(ctk.CTk):
                     "preferredcodec": "mp3",
                     "preferredquality": quality.replace(" kbps", ""),
                 },
-                {"key": "FFmpegMetadata", "add_metadata": True},
+                {"key": "FFmpegMetadata", "add_metadata": True},   # title + artist (channel)
+                *THUMBNAIL_POSTPROCESSORS,                         # cover art
             ]
+        # Download the thumbnail so it can be embedded as cover art, then delete the file
+        ydl_opts["writethumbnail"] = True
 
         # If custom FFmpeg path found, pass it directly
         if self.ffmpeg_path:
@@ -1092,10 +1261,19 @@ class YouTubeMP3Downloader(ctk.CTk):
             if douyin.is_douyin(url):
                 job["title"] = douyin.download(url, mode, quality, self.download_dir, self.ffmpeg_path, job)
             else:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    info = ydl.extract_info(url, download=True)
-                    if info:
-                        job["title"] = info.get("title") or "Video"
+                try:
+                    info = self._run_ytdlp(url, ydl_opts)
+                except yt_dlp.utils.DownloadError as e:
+                    # YouTube sometimes flags a home IP as a "bot" / rate-limits it (HTTP 429).
+                    # The Safari and mobile-web clients usually still work, so retry once with them.
+                    # (It can show up as "not a bot", HTTP 429, or HTTP 403 on the video data.)
+                    if detect_platform(url) != "YouTube" or is_permanent_error(str(e)):
+                        raise
+                    job.update(fraction=0.0, msg="YouTube busy · retrying another way…")
+                    ydl_opts["extractor_args"] = {"youtube": {"player_client": YOUTUBE_FALLBACK_CLIENTS}}
+                    info = self._run_ytdlp(url, ydl_opts)
+                if info:
+                    job["title"] = info.get("clean_name") or info.get("title") or "Video"
         except douyin.DouyinError as e:
             error_msg = str(e)
         except yt_dlp.utils.DownloadError as e:
@@ -1105,8 +1283,8 @@ class YouTubeMP3Downloader(ctk.CTk):
                 error_msg = "FFmpeg is required. Please install FFmpeg."
             elif "private" in low or "unavailable" in low:
                 error_msg = "Video is private or unavailable."
-            elif "not a bot" in low:
-                error_msg = "YouTube blocked the request. Update yt-dlp and retry."
+            elif is_youtube_block(low):
+                error_msg = "YouTube is blocking this network right now. Try again later."
             elif "sign in" in low or "login" in low or "log in" in low:
                 error_msg = "This video requires login (age/private restricted)."
             elif "unsupported url" in low:
@@ -1118,6 +1296,15 @@ class YouTubeMP3Downloader(ctk.CTk):
 
         job["error"] = error_msg
         job["phase"] = "failed" if error_msg else "done"
+
+    @staticmethod
+    def _run_ytdlp(url: str, ydl_opts: dict):
+        # Check before YoutubeDL() — it rewrites params["outtmpl"] into a dict in place
+        clean_tags = "clean_name" in str(ydl_opts.get("outtmpl"))
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            if clean_tags:
+                ydl.add_post_processor(CleanMusicTags(), when="pre_process")
+            return ydl.extract_info(url, download=True)
 
     def _on_all_complete(self):
         """Invoked on UI thread after every link finished or errored."""
